@@ -1,0 +1,17 @@
+{
+  "name": "telegram-alerts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "engines": { "bun": ">=1.4.0" },
+  "scripts": {
+    "setup": "bun src/cli.ts setup",
+    "status": "bun src/cli.ts status",
+    "preview": "bun src/cli.ts preview",
+    "send": "bun src/cli.ts send",
+    "check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "devDependencies": { "@types/bun": "^1.4.0", "typescript": "^5.9.0" }
+}
