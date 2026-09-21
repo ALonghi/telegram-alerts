@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { findChannel, parseAlert, formatAlert, telegram } from "./core.ts";
 
 test("discovers the unique channel from membership or channel posts, ignoring groups", () => {
-  assert.equal(findChannel([{ my_chat_member: { chat: { id: -100123, type: "channel", title: "GFI Alerts" } } }, { channel_post: { chat: { id: -100123, type: "channel", title: "GFI Alerts" } } }, { channel_post: { chat: { id: -9, type: "group", title: "GFI Alerts" } } }]), -100123);
+  assert.equal(findChannel([{ my_chat_member: { chat: { id: -100123, type: "channel", title: "Operations" } } }, { channel_post: { chat: { id: -100123, type: "channel", title: "Operations" } } }, { channel_post: { chat: { id: -9, type: "group", title: "Operations" } } }]), -100123);
   assert.throws(() => findChannel([]));
-  assert.throws(() => findChannel([-1, -2].map(id => ({ channel_post: { chat: { id, type: "channel", title: "GFI Alerts" } } }))));
+  assert.throws(() => findChannel([-1, -2].map(id => ({ channel_post: { chat: { id, type: "channel", title: "Operations" } } }))));
 });
 
 test("validates input and preserves the actual model label", () => {
-  const alert = { id: "coop-2026-09-v1", model: "GPT-5.6 Luna", reasoning: "High", text: "PREVIEW — no live offer" };
+  const alert = { id: "backup-2026-09-v1", model: "GPT-5.6 Luna", reasoning: "High", text: "PREVIEW — sample notification" };
   assert.match(formatAlert(parseAlert(alert)), /^\[GPT-5.6 Luna · Reasoning: High\]/);
   assert.throws(() => parseAlert({ ...alert, text: "" }));
   assert.throws(() => parseAlert({ ...alert, text: "x".repeat(4096) }));

@@ -1,6 +1,3 @@
-export const BOT_USERNAME = "gfi_alerts_chatgpt_bot";
-export const CHANNEL_TITLE = "GFI Alerts";
-
 export class SafeError extends Error {}
 
 export function record(value: unknown): Record<string, unknown> {
@@ -10,32 +7,54 @@ export function record(value: unknown): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value));
 }
 
-export interface Alert {
+interface AlertBody {
   id: string;
-  model: string;
-  reasoning: string;
   text: string;
+}
+
+export type Alert = AlertBody & ({ model: string; reasoning: string } | { model?: never; reasoning?: never });
+
+export interface ChannelConfig {
+  bot: string;
+  chatId: number;
+  keychainService: string;
+}
+
+export function parseConfig(value: unknown): ChannelConfig {
+  const data = record(value);
+  if (typeof data.bot !== "string" || !/^[A-Za-z0-9_]{5,32}$/.test(data.bot)
+    || typeof data.chatId !== "number" || !Number.isSafeInteger(data.chatId) || data.chatId >= 0
+    || (data.keychainService !== undefined && (typeof data.keychainService !== "string" || !/^[A-Za-z0-9_.-]+$/.test(data.keychainService)))) {
+    throw new SafeError("Invalid channel configuration. Run setup again.");
+  }
+  // Preserve credentials created by earlier versions.
+  return { bot: data.bot, chatId: data.chatId, keychainService: typeof data.keychainService === "string" ? data.keychainService : "gfi-alerts.telegram" };
 }
 
 export function parseAlert(value: unknown): Alert {
   const data = record(value);
   const { id, model, reasoning, text } = data;
-  if (typeof id !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(id)
-    || typeof model !== "string" || !/^[A-Za-z0-9 ._-]{1,80}$/.test(model)
-    || typeof reasoning !== "string" || !["None", "Minimal", "Low", "Medium", "High", "XHigh", "Max", "Ultra", "Unknown"].includes(reasoning)
-    || typeof text !== "string" || !text.trim()) {
-    throw new SafeError("Alert needs a safe id, actual model, reasoning level and non-empty text.");
+  if (typeof id !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(id) || typeof text !== "string" || !text.trim()) {
+    throw new SafeError("Alert needs a safe id and non-empty text.");
   }
   if (/\b\d{6,}:[A-Za-z0-9_-]{20,}\b/.test(text)) {
     throw new SafeError("Message appears to contain a bot token; refusing to send.");
   }
-  const alert = { id, model, reasoning, text: text.trim() };
+  let alert: Alert;
+  if (model === undefined && reasoning === undefined) alert = { id, text: text.trim() };
+  else {
+    if (typeof model !== "string" || !/^[A-Za-z0-9 ._-]{1,80}$/.test(model)
+      || typeof reasoning !== "string" || !["None", "Minimal", "Low", "Medium", "High", "XHigh", "Max", "Ultra", "Unknown"].includes(reasoning)) {
+      throw new SafeError("Provide both actual model and reasoning level, or omit both.");
+    }
+    alert = { id, model, reasoning, text: text.trim() };
+  }
   if (formatAlert(alert).length > 4096) throw new SafeError("Message exceeds Telegram's 4096-character limit.");
   return alert;
 }
 
 export function formatAlert(alert: Alert): string {
-  return `[${alert.model} · Reasoning: ${alert.reasoning}] 🔔\n\n${alert.text}`;
+  return alert.model === undefined ? alert.text : `[${alert.model} · Reasoning: ${alert.reasoning}] 🔔\n\n${alert.text}`;
 }
 
 export function findChannel(updates: unknown): number {
@@ -48,10 +67,10 @@ export function findChannel(updates: unknown): number {
       const event = record(data[key]);
       if (!event.chat) continue;
       const chat = record(event.chat);
-      if (chat.type === "channel" && chat.title === CHANNEL_TITLE && typeof chat.id === "number" && Number.isSafeInteger(chat.id) && chat.id < 0) channels.add(chat.id);
+      if (chat.type === "channel" && typeof chat.id === "number" && Number.isSafeInteger(chat.id) && chat.id < 0) channels.add(chat.id);
     }
   }
-  if (channels.size !== 1) throw new SafeError(channels.size ? "Several channels named GFI Alerts found. Pass the intended numeric channel ID to setup." : "Channel not found. Post a short message in GFI Alerts, then run setup again.");
+  if (channels.size !== 1) throw new SafeError(channels.size ? "Several channels found. Pass the intended numeric channel ID to setup." : "Channel not found. Post a short message in your channel, then run setup again.");
   const id = channels.values().next().value;
   if (id === undefined) throw new SafeError("Channel not found.");
   return id;

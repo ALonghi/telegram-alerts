@@ -1,22 +1,27 @@
 # Telegram Alerts
 
-A local TypeScript sender for your Coop → Miles & More monitor. Uses Bun 1.4+ and Telegram's official HTTPS Bot API, with no runtime dependencies or third-party messaging service. macOS only, because credentials live in Keychain.
+A reusable TypeScript library and Bun CLI for sending Telegram notifications from scripts, scheduled tasks and applications. No runtime dependencies or third-party messaging service. The library sends through Telegram's official HTTPS Bot API; the macOS CLI adds Keychain storage, channel verification and delivery deduplication.
 
-## One-time setup
+## Install and set up the CLI
+
+Requires Bun 1.4+ and macOS for the CLI's Keychain integration.
 
 ```sh
-cd ~/dev/github/telegram-alerts
-bun install
+bun install --frozen-lockfile
 bun run setup
 ```
 
-Paste the token from **@BotFather → @gfi_alerts_chatgpt_bot** into the hidden Terminal prompt. It is validated against the bot username and saved to the login Keychain as service `gfi-alerts.telegram`, account `gfi_alerts_chatgpt_bot`. No token is written to a project file, shell history or process argument. Keychain may ask you to allow access to `/usr/bin/security`; approve only the access you intend. The token remains sensitive in process memory while requests run.
+Run setup as your normal user, without `sudo`. Paste your bot's token from **@BotFather** into the hidden prompt. Setup reads the bot identity from Telegram, saves its token in Keychain, discovers a channel, verifies Post Messages permission and asks you to confirm the destination before sending a connection test.
 
-Setup discovers **GFI Alerts** from recent bot membership/channel updates, verifies the channel and the bot's Post Messages permission, asks you to confirm its numeric ID, and sends a clearly labeled setup test. If discovery finds nothing, post a short message in the channel and rerun setup. If multiple channels share the name, use `bun run setup -100YOUR_CHANNEL_ID` for the intended channel. Existing webhooks can prevent discovery; setup does not remove them.
+If discovery finds nothing, publish a short message in the intended channel and retry. If multiple channels are available, provide the numeric channel ID:
 
-Configuration and delivery receipts are stored under `~/Library/Application Support/gfi-alerts/` with owner-only permissions. The configured numeric channel ID is fixed for all sends; callers cannot select another destination.
+```sh
+bun run setup -1001234567890
+```
 
-## Use
+Discovery does not remove existing bot webhooks. If another service owns the bot's webhook or consumes its updates, use an explicit channel ID.
+
+## Send notifications
 
 ```sh
 bun run status
@@ -24,17 +29,58 @@ bun run preview preview.json
 bun run send /absolute/path/to/alert.json
 ```
 
-Send/preview also accept JSON on stdin. Required fields: `id` (stable campaign/version identifier), `model` (actual running model), `reasoning` (actual setting or `Unknown`), and `text` (plain text with official sources and deadline). `preview.json` is illustrative metadata; the sender does not invoke an AI model or independently verify caller-supplied model labels.
+The JSON input needs only `id` and `text`:
 
-Successful deliveries are deduplicated by `id`. Use a new version only for a material offer change. A pending receipt is written before sending: if connectivity fails or a process stops, delivery may be uncertain. The sender does not retry automatically. Inspect Telegram before manually removing the exact pending receipt or choosing a new ID. Receipts are retained locally.
+```json
+{
+  "id": "backups:daily:2026-09-21",
+  "text": "Daily backup completed successfully."
+}
+```
 
-## Scheduled monitor
+Send and preview also accept JSON on stdin. Use a stable, namespaced ID to avoid collisions between applications sharing the CLI's receipt store. The CLI sends only to its configured numeric channel ID, even if the channel is renamed.
 
-The existing Codex task performs research every two days; this project handles delivery only. The task should check `status`, prepare an alert JSON file, and run `bun /Users/hybrid/dev/github/telegram-alerts/src/cli.ts send /path/to/alert.json`. Mark an alert delivered only after success. Report setup, permission or delivery failures in the task. Never include tokens in prompts, messages, logs or JSON inputs.
+AI-generated alerts may additionally provide **both** `model` and `reasoning`. These add a prefix such as `[GPT-5.6 Luna · Reasoning: High]`. Omit both for ordinary notifications. The library does not call an AI model or verify caller-supplied model metadata.
 
-Keep the Mac awake, Codex running, and the login Keychain unlocked. The scheduled run must have permission to read Keychain/config, write delivery receipts and reach `api.telegram.org`. Interactive success does not prove unattended execution; inspect the first scheduled run. No broad permission changes are installed by this project.
+The final plain-text message is limited to 4096 characters. Link previews are disabled. Token-like strings are rejected from message bodies.
 
-The sender cannot switch the scheduled task's model. Select Luna with High reasoning in the task settings; alert metadata must reflect the model actually used.
+## Library usage
+
+The package exports `sendAlert`, `parseAlert`, `formatAlert`, `SafeError`, and the `Alert` type from `src/index.ts`. This is a private source package; use a local path dependency from another Bun project:
+
+```sh
+bun add /absolute/path/to/telegram-alerts
+```
+
+```ts
+import { sendAlert } from "telegram-alerts";
+
+const token = process.env.TELEGRAM_BOT_TOKEN;
+if (!token) throw new Error("Configure the bot token in your secret store.");
+
+const messageId = await sendAlert(
+  { token, chatId: -1001234567890 },
+  { id: "deployments:release-42", text: "Release 42 deployed successfully." },
+);
+```
+
+The library accepts a Telegram chat ID directly, so it can also target groups or private chats where the bot has access. It does not read Keychain, load CLI configuration, schedule jobs, retry sends or deduplicate IDs. Library callers own those concerns. A successful call returns Telegram's message ID; an unconfirmed response throws. The CLI wraps this function with channel checks and a persistent receipt store.
+
+## Credentials and configuration
+
+New CLI installations store configuration and receipts under `~/Library/Application Support/telegram-alerts/`. Set `TELEGRAM_ALERTS_DATA_DIR` to an absolute directory to keep separate configurations and receipts for different integrations. Set the same value for setup, status and send.
+
+The token is stored in macOS Keychain under service `telegram-alerts.telegram`, with the bot username as the account. It is supplied to the Keychain tool through stdin rather than process arguments. The token remains in process memory while requests run. Configuration contains the bot username, numeric channel ID and Keychain service reference; it contains no token.
+
+Earlier installations used `~/Library/Application Support/gfi-alerts/` and service `gfi-alerts.telegram`. When an existing configuration is found there and no explicit data directory is selected, it continues to be used. This preserves credentials and deduplication receipts without migration or re-entry.
+
+## Reliability and scheduling
+
+The CLI writes a pending receipt before sending and records Telegram's message ID after success. Confirmed duplicate IDs are suppressed. An interrupted or timed-out send may have reached Telegram; pending receipts therefore block automatic retries. Inspect the destination before removing the exact pending receipt or issuing a new ID.
+
+A scheduler should run `status`, prepare an alert JSON file, then invoke `bun /absolute/path/to/telegram-alerts/src/cli.ts send /path/to/alert.json`. Treat a nonzero exit code as a failure requiring attention. Application-specific monitoring logic and schedules belong in the calling application or task.
+
+For unattended local runs, keep the Mac awake and the login Keychain unlocked. The scheduler needs permission to execute Bun, access the configuration and Keychain, write receipts and reach `api.telegram.org`. Verify the first scheduled run; interactive success alone does not prove unattended access.
 
 ## Development
 
@@ -43,6 +89,6 @@ bun run check
 bun test
 ```
 
-Tests use mocked network responses and do not access Keychain or send messages.
+Network tests use mocked responses. The macOS parser regression test runs the read-only `security help` command and does not read or write credentials.
 
 API reference: https://core.telegram.org/bots/api

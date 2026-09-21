@@ -1,6 +1,4 @@
 {
-  "id": "preview-example",
-  "model": "GPT-5.6 Luna",
-  "reasoning": "High",
-  "text": "PREVIEW — not a live promotion\n\nCoop Superpoints → Miles & More\n\nBonus: [verified percentage]\nConversion: [verified rate]\nValid until: [date and time, Zurich]\nConditions: [minimum transfer and eligibility]\n\nOffer: [official link]"
+  "id": "example:backup:2026-09-21",
+  "text": "PREVIEW — sample notification\n\nBackup completed successfully.\nFiles processed: 240\nDuration: 18 seconds"
 }
