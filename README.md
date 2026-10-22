@@ -4,7 +4,7 @@ A reusable TypeScript library and Bun CLI for sending Telegram notifications fro
 
 ## Install and set up the CLI
 
-Requires Bun 1.4+ and macOS for the CLI's Keychain integration.
+Requires Bun 1.4.4+ and macOS for the CLI's Keychain integration.
 
 ```sh
 bun install --frozen-lockfile

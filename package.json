@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "exports": "./src/index.ts",
-  "packageManager": "bun@1.4.2",
-  "engines": { "bun": ">=1.4.0" },
+  "packageManager": "bun@1.4.4",
+  "engines": { "bun": ">=1.4.4" },
   "scripts": {
     "setup": "bun src/cli.ts setup",
     "status": "bun src/cli.ts status",
